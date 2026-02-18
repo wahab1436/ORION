@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ORION — Operational Root-Cause Intelligence Network</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.32.0/plotly.min.js"></script>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand">
+                <span class="brand-acronym">ORION</span>
+                <span class="brand-subtitle">Operational Root-Cause Intelligence Network</span>
+            </div>
+            <div id="status-indicator" class="status-idle">System Ready</div>
+        </div>
+    </header>
+
+    <main class="app-body">
+
+        <!-- ============================================================
+             PANEL 1 — Data Upload
+        ============================================================ -->
+        <section class="panel" id="panel-upload">
+            <h2 class="panel-title">Data Upload</h2>
+            <p class="panel-description">
+                Upload CSV files conforming to the KPI, Segment, or Event schemas.
+                All tables must be loaded before running analysis.
+            </p>
+
+            <div class="upload-grid">
+                <div class="upload-card" data-type="kpi">
+                    <h3>KPI Table</h3>
+                    <p class="schema-hint">Required: date, kpi_name, kpi_value, target_value</p>
+                    <label class="file-label">
+                        Select CSV
+                        <input type="file" accept=".csv" class="file-input" data-table="kpi">
+                    </label>
+                    <div class="upload-status" id="status-kpi">Not loaded</div>
+                </div>
+
+                <div class="upload-card" data-type="segment">
+                    <h3>Segment Table</h3>
+                    <p class="schema-hint">Required: date, segment_type, segment_name, segment_kpi_value, segment_change, weight</p>
+                    <label class="file-label">
+                        Select CSV
+                        <input type="file" accept=".csv" class="file-input" data-table="segment">
+                    </label>
+                    <div class="upload-status" id="status-segment">Not loaded</div>
+                </div>
+
+                <div class="upload-card" data-type="event">
+                    <h3>Event Table</h3>
+                    <p class="schema-hint">Required: date, event_type, event_name, magnitude</p>
+                    <label class="file-label">
+                        Select CSV
+                        <input type="file" accept=".csv" class="file-input" data-table="event">
+                    </label>
+                    <div class="upload-status" id="status-event">Not loaded</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================================
+             PANEL 2 — KPI Trends and Anomaly Detection
+        ============================================================ -->
+        <section class="panel" id="panel-anomaly">
+            <h2 class="panel-title">KPI Trends and Anomaly Detection</h2>
+
+            <div class="control-row">
+                <div class="control-group">
+                    <label for="input-kpi-name">KPI Name</label>
+                    <input type="text" id="input-kpi-name" placeholder="e.g. revenue" class="text-input">
+                </div>
+                <button class="btn btn-primary" id="btn-detect">Run Detection</button>
+            </div>
+
+            <div id="chart-anomaly" class="chart-container"></div>
+
+            <div id="anomaly-summary" class="summary-box hidden">
+                <span id="anomaly-count-label"></span>
+            </div>
+        </section>
+
+        <!-- ============================================================
+             PANEL 3 — Root Cause Analysis
+        ============================================================ -->
+        <section class="panel" id="panel-root-cause">
+            <h2 class="panel-title">Root Cause Analysis</h2>
+
+            <div class="control-row">
+                <div class="control-group">
+                    <label for="rc-kpi-name">KPI Name</label>
+                    <input type="text" id="rc-kpi-name" placeholder="e.g. revenue" class="text-input">
+                </div>
+                <div class="control-group">
+                    <label for="rc-anomaly-date">Anomaly Date (optional)</label>
+                    <input type="date" id="rc-anomaly-date" class="text-input">
+                </div>
+                <button class="btn btn-primary" id="btn-root-cause">Analyse</button>
+            </div>
+
+            <div id="chart-root-cause" class="chart-container"></div>
+
+            <table class="data-table hidden" id="table-root-cause">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Segment</th>
+                        <th>Weighted Contribution</th>
+                        <th>Direction</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-root-cause"></tbody>
+            </table>
+        </section>
+
+        <!-- ============================================================
+             PANEL 4 — Impact Simulation
+        ============================================================ -->
+        <section class="panel" id="panel-simulation">
+            <h2 class="panel-title">Impact Simulation</h2>
+            <p class="panel-description">
+                Model the projected KPI outcome of a percentage change to a specific segment.
+            </p>
+
+            <div class="control-row">
+                <div class="control-group">
+                    <label for="sim-kpi-name">KPI Name</label>
+                    <input type="text" id="sim-kpi-name" placeholder="e.g. revenue" class="text-input">
+                </div>
+                <div class="control-group">
+                    <label for="sim-segment-name">Segment Name</label>
+                    <input type="text" id="sim-segment-name" placeholder="e.g. North Region" class="text-input">
+                </div>
+                <div class="control-group">
+                    <label for="sim-change-pct">Change (%)
+                        <span class="tooltip-anchor" title="Positive values represent an increase; negative values represent a decrease.">?</span>
+                    </label>
+                    <input type="number" id="sim-change-pct" value="10" step="1" class="text-input narrow">
+                </div>
+                <button class="btn btn-primary" id="btn-simulate">Simulate</button>
+            </div>
+
+            <div id="sim-results" class="sim-results hidden">
+                <div class="stat-row">
+                    <div class="stat-card">
+                        <div class="stat-label">Current KPI</div>
+                        <div class="stat-value" id="sim-current-kpi">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Regression Estimate</div>
+                        <div class="stat-value" id="sim-regression">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Monte Carlo P50</div>
+                        <div class="stat-value" id="sim-p50">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Confidence Range (P10–P90)</div>
+                        <div class="stat-value" id="sim-range">—</div>
+                    </div>
+                </div>
+                <div id="chart-simulation" class="chart-container"></div>
+            </div>
+        </section>
+
+        <!-- ============================================================
+             PANEL 5 — Recommendations
+        ============================================================ -->
+        <section class="panel" id="panel-recommendation">
+            <h2 class="panel-title">Recommendations</h2>
+            <p class="panel-description">
+                Generate an AI-powered narrative recommendation from the analysis context.
+                Requires a configured Gemini API key.
+            </p>
+
+            <div class="control-row">
+                <button class="btn btn-primary" id="btn-recommend">Generate Recommendation</button>
+            </div>
+
+            <div id="recommendation-output" class="recommendation-box hidden">
+                <div class="recommendation-content" id="recommendation-text"></div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="app-footer">
+        ORION v1.0 — Internal Analytics Platform
+    </footer>
+
+    <div id="global-error" class="global-error hidden"></div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
