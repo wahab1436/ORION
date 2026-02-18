@@ -1,0 +1,333 @@
+# ORION — Operational Root-Cause Intelligence Network
+
+A modular analytical platform for KPI anomaly detection, root cause attribution,
+probabilistic impact simulation, and AI-powered recommendation generation.
+
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Architecture](#architecture)
+3. [Setup](#setup)
+4. [Running the Application](#running-the-application)
+5. [API Reference](#api-reference)
+6. [Data Schemas](#data-schemas)
+7. [Adding New KPIs, Segments, or Events](#extending-the-system)
+8. [Running Tests](#running-tests)
+9. [Production Deployment](#production-deployment)
+
+---
+
+## Overview
+
+ORION provides a structured pipeline to:
+
+- Detect KPI anomalies using statistical (Z-score), decomposition (STL), and ensemble (Isolation Forest) methods with majority-vote consensus.
+- Attribute root causes to business segments using Gradient Boosting and SHAP values with Bayesian weighting.
+- Simulate the projected KPI impact of operational changes via Monte Carlo and regression.
+- Generate structured, human-readable recommendations via the Gemini API.
+- Visualise everything through an interactive web dashboard built on Plotly.
+
+---
+
+## Architecture
+
+```
+ORION/
+├── app/
+│   ├── __init__.py       Application factory (Flask)
+│   ├── routes.py         All API endpoints (Blueprint)
+│   ├── ml_pipeline.py    AnomalyDetector, RootCauseAnalyser, ImpactSimulator, ModelStore
+│   └── utils.py          Validation, schema enforcement, shared helpers
+├── data/                 Sample CSV files for testing
+├── models/               Persisted ML models (joblib, auto-created)
+├── templates/
+│   └── dashboard.html    Interactive frontend dashboard
+├── static/
+│   ├── css/dashboard.css
+│   └── js/dashboard.js
+├── tests/
+│   ├── test_ml_pipeline.py   Unit tests (AnomalyDetector, RootCauseAnalyser, ImpactSimulator)
+│   └── test_routes.py        Integration tests (all endpoints)
+├── .env.example          Environment variable template
+├── requirements.txt      Pinned Python dependencies
+└── run.py                Development server entry point
+```
+
+---
+
+## Setup
+
+### Prerequisites
+
+- Python 3.10 or higher
+- pip
+
+### Installation
+
+```bash
+# Clone or unzip the project
+cd ORION
+
+# Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate       # Linux / macOS
+.venv\Scripts\activate          # Windows
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment variables
+cp .env.example .env
+# Edit .env and set GEMINI_API_KEY and FLASK_SECRET_KEY
+```
+
+---
+
+## Running the Application
+
+### Development
+
+```bash
+python run.py
+```
+
+The dashboard will be available at `http://localhost:5000`.
+
+### Production (Gunicorn)
+
+```bash
+gunicorn -w 4 -b 0.0.0.0:8000 "run:app"
+```
+
+Configure HTTPS via a reverse proxy (nginx or Caddy) in front of Gunicorn.
+
+---
+
+## API Reference
+
+All endpoints accept and return JSON unless noted. Non-200 responses follow:
+
+```json
+{ "success": false, "error": "Description of the error." }
+```
+
+Successful responses follow:
+
+```json
+{ "success": true, "data": { ... } }
+```
+
+### `GET /health`
+
+Returns `{ "status": "ok" }`. Used for liveness checks.
+
+---
+
+### `POST /upload-data`
+
+**Content-Type:** `multipart/form-data`
+
+| Field       | Type   | Description                             |
+|-------------|--------|-----------------------------------------|
+| file        | File   | CSV file to upload                      |
+| table_type  | string | One of: `kpi`, `segment`, `event`       |
+
+**Response:**
+
+```json
+{
+  "table_type": "kpi",
+  "rows": 60,
+  "columns": ["date", "kpi_name", "kpi_value", "target_value"]
+}
+```
+
+---
+
+### `POST /detect-anomaly`
+
+**Body:**
+
+```json
+{ "kpi_name": "revenue" }
+```
+
+**Response:**
+
+```json
+{
+  "kpi_name": "revenue",
+  "total_points": 60,
+  "anomaly_count": 2,
+  "anomalies": [ { "date": "2024-01-15", "value": 155.6, "anomaly_score": 0.67 } ],
+  "full_series": [ ... ]
+}
+```
+
+---
+
+### `POST /root-cause`
+
+**Body:**
+
+```json
+{ "kpi_name": "revenue", "anomaly_date": "2024-01-15" }
+```
+
+`anomaly_date` is optional. If omitted, mean SHAP values across all dates are used.
+
+**Response:**
+
+```json
+{
+  "ranked_causes": [
+    { "segment": "North", "contribution": 0.42 },
+    { "segment": "South", "contribution": 0.31 }
+  ],
+  "shap_values": { "North": 0.42, "South": 0.31, "East": 0.27 },
+  "model_feature_importances": { "North": 0.38, ... }
+}
+```
+
+---
+
+### `POST /simulate-impact`
+
+**Body:**
+
+```json
+{ "kpi_name": "revenue", "segment_name": "North", "change_pct": 10 }
+```
+
+**Response:**
+
+```json
+{
+  "segment_name": "North",
+  "change_pct": 10,
+  "current_kpi": 101.6,
+  "regression_estimate": 104.98,
+  "simulated_mean": 105.02,
+  "simulated_std": 3.01,
+  "p10": 101.14,
+  "p50": 105.01,
+  "p90": 108.89,
+  "n_simulations": 2000
+}
+```
+
+---
+
+### `POST /recommendation`
+
+**Body:**
+
+```json
+{
+  "context": {
+    "anomaly_detection": { "kpi_name": "revenue", "anomaly_count": 2, "total_points": 60 },
+    "root_cause": { "top_causes": [ ... ] },
+    "simulation": { "segment_name": "North", "change_pct": 10, "p50": 105.01 }
+  }
+}
+```
+
+Requires `GEMINI_API_KEY` to be set in the environment.
+
+---
+
+## Data Schemas
+
+All dates must be ISO format (`YYYY-MM-DD`).
+
+### KPI Table
+
+| Column       | Type    | Description                     |
+|--------------|---------|---------------------------------|
+| date         | date    | Observation date                |
+| kpi_name     | string  | Identifier for the KPI          |
+| kpi_value    | float   | Observed value                  |
+| target_value | float   | Target / benchmark value        |
+| notes        | string  | Optional free-text notes        |
+
+### Segment Table
+
+| Column              | Type   | Description                           |
+|---------------------|--------|---------------------------------------|
+| date                | date   | Observation date                      |
+| segment_type        | string | Category of segmentation (e.g. region)|
+| segment_name        | string | Name of the segment                   |
+| segment_kpi_value   | float  | KPI value for this segment            |
+| segment_change      | float  | Fractional change from prior period   |
+| weight              | float  | Relative importance (0–1, sums to 1)  |
+
+### Event Table
+
+| Column            | Type   | Description                             |
+|-------------------|--------|-----------------------------------------|
+| date              | date   | Event date                              |
+| event_type        | string | Category (e.g. promotion, outage)       |
+| event_name        | string | Descriptive name                        |
+| affected_segments | string | Pipe-separated segment names            |
+| magnitude         | float  | Estimated fractional impact             |
+| notes             | string | Optional free-text notes                |
+
+---
+
+## Extending the System
+
+### Adding a new KPI
+
+Upload a new KPI CSV with a distinct `kpi_name`. No code changes are required.
+
+### Adding a new segment type
+
+Add rows to the segment CSV with the new `segment_type` and `segment_name`. The
+pipeline will automatically include them in the feature matrix.
+
+### Adding a new event type
+
+Add rows to the event CSV with the new `event_type`. The event table is currently
+used for contextual reference; to incorporate events directly into the ML pipeline,
+extend `RootCauseAnalyser.analyse()` in `app/ml_pipeline.py` to join event
+magnitude values into the feature matrix.
+
+### Swapping the recommendation model
+
+Update the model identifier in `app/routes.py` inside `recommendation()`:
+
+```python
+model = genai.GenerativeModel("gemini-1.5-pro")  # or any other Gemini model
+```
+
+---
+
+## Running Tests
+
+```bash
+pytest tests/ -v
+```
+
+Unit tests cover each analytical module independently. Integration tests exercise
+the full upload-detect-analyse-simulate-recommend pipeline via the Flask test client.
+
+---
+
+## Production Deployment
+
+- Serve with Gunicorn behind an HTTPS-terminating reverse proxy.
+- Store all secrets in environment variables or a secrets manager; never commit `.env`.
+- Replace the in-memory `_cache` in `routes.py` with Redis or a database for
+  multi-worker deployments.
+- Optionally containerise with Docker using the following command structure:
+
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "run:app"]
+```
